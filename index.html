@@ -21,6 +21,7 @@ select{width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line
 .notes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
 .note{position:relative;min-height:62px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:18px;font-weight:700}
 .note small{display:block;font-size:11px;font-weight:400;color:var(--dim)}
+.note.sharp{background:#12141a;color:#b8bfd0}
 .note.sel{border-color:var(--green);background:#16302a}
 .note.done::after{content:"✓";position:absolute;top:3px;right:7px;color:var(--green);font-size:13px}
 .btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -54,7 +55,8 @@ summary{color:var(--dim);padding:8px 0}
 </section>
 
 <section class="row">
-  <div><label>Key</label><select id="key"></select></div>
+  <div id="keyBox"><label>Key</label><select id="key"></select></div>
+  <div id="startBox" style="display:none"><label>Start note</label><select id="start"></select></div>
   <div><label>Scale</label><select id="scale"></select></div>
 </section>
 
@@ -103,16 +105,18 @@ const SCALES={
   minor:{n:'Natural minor',iv:[0,2,3,5,7,8,10,12],lab:['1','2','♭3','4','5','♭6','♭7','1']},
   pent:{n:'Major pentatonic',iv:[0,2,4,7,9,12],lab:['Do','Re','Mi','Sol','La','Do']},
   mpent:{n:'Minor pentatonic',iv:[0,3,5,7,10,12],lab:['1','♭3','4','5','♭7','1']},
-  chrom:{n:'Chromatic',iv:[0,1,2,3,4,5,6,7,8,9,10,11,12],lab:null}
+  chrom:{n:'Chromatic',iv:[0,1,2,3,4,5,6,7,8,9,10,11,12],lab:null},
+  all:{n:'All notes (pick start)',iv:Array.from({length:25},(_,i)=>i),lab:null}
 };
 const OCT=[{o:2,n:'Low',r:'65–130 Hz'},{o:3,n:'Medium',r:'130–260 Hz'},{o:4,n:'High',r:'260–520 Hz'}];
 
 const $=id=>document.getElementById(id);
-const st={oct:3,root:0,scale:'major',tol:25,forg:true,target:null,passed:new Set()};
+const st={oct:3,root:0,scale:'major',tol:25,forg:true,target:null,passed:new Set(),start:48};
 const midiHz=m=>440*Math.pow(2,(m-69)/12);
 const midiName=m=>NOTES[((m%12)+12)%12]+(Math.floor(m/12)-1);
-const rootMidi=()=>12*(st.oct+1)+st.root;
-const scaleMidis=()=>SCALES[st.scale].iv.map(i=>rootMidi()+i);
+const octRoot=()=>12*(st.oct+1)+st.root;
+const rootMidi=()=>st.scale==='all'?st.start:octRoot();
+const scaleMidis=()=>SCALES[st.scale].iv.map(i=>rootMidi()+i).filter(m=>m<=84);
 
 /* ---------- UI build ---------- */
 function buildOct(){
@@ -121,14 +125,28 @@ function buildOct(){
     const b=document.createElement('button');
     b.innerHTML=x.n+'<small>'+x.r+'</small>';
     if(x.o===st.oct)b.className='on';
-    b.onclick=()=>{st.oct=x.o;resetConfig();buildOct();};
+    b.onclick=()=>{
+      st.oct=x.o;
+      if(st.scale==='all'){st.start=Math.min(72,octRoot());$('start').value=st.start;}
+      resetConfig();buildOct();
+    };
     $('oct').appendChild(b);
   });
 }
 NOTES.forEach((n,i)=>{const o=document.createElement('option');o.value=i;o.textContent=n;$('key').appendChild(o);});
 Object.keys(SCALES).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=SCALES[k].n;$('scale').appendChild(o);});
+for(let m=36;m<=72;m++){const o=document.createElement('option');o.value=m;o.textContent=midiName(m);$('start').appendChild(o);}
+$('start').value=st.start;
 $('key').onchange=e=>{st.root=+e.target.value;resetConfig();};
-$('scale').onchange=e=>{st.scale=e.target.value;resetConfig();};
+$('start').onchange=e=>{st.start=+e.target.value;resetConfig();};
+$('scale').onchange=e=>{
+  st.scale=e.target.value;
+  const all=st.scale==='all';
+  if(all){st.start=Math.max(36,Math.min(72,octRoot()));$('start').value=st.start;}
+  $('keyBox').style.display=all?'none':'';
+  $('startBox').style.display=all?'':'none';
+  resetConfig();
+};
 $('tol').onchange=e=>{st.tol=+e.target.value;drawZone();};
 $('forg').onchange=e=>{st.forg=e.target.checked;};
 
@@ -138,7 +156,7 @@ function buildNotes(){
   const sc=SCALES[st.scale];
   scaleMidis().forEach((m,i)=>{
     const b=document.createElement('button');
-    b.className='note'+(m===st.target?' sel':'')+(st.passed.has(m)?' done':'');
+    b.className='note'+(NOTES[m%12].length>1?' sharp':'')+(m===st.target?' sel':'')+(st.passed.has(m)?' done':'');
     b.dataset.m=m;
     b.innerHTML=midiName(m)+'<small>'+(sc.lab?sc.lab[i]:'&nbsp;')+'</small>';
     b.onclick=()=>playNote(m);
